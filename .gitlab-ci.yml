@@ -1,0 +1,99 @@
+stages:
+  - preparation
+  - building
+  - package
+  - deploy
+
+cache:
+  key: "$CI_JOB_NAME-$CI_COMMIT_REF_SLUG"
+
+node-install:
+  stage: preparation
+  script:
+    - npm --version
+    - cd _src
+    - npm install --no-audit
+  artifacts:
+    paths:
+      - _src/node_modules/
+    expire_in: 1 days
+  cache:
+    paths:
+      - _src/node_modules/
+  only:
+    - master
+    - develop
+
+build-assets:
+  stage: building
+  only:
+    - master
+    - develop
+  dependencies:
+    - node-install
+  script:
+    - npm --version
+    - cd _src
+    - npm run gulp
+  artifacts:
+    paths:
+      - css/
+      - js/
+    expire_in: 1 days
+    when: always
+
+package-app:
+  stage: package
+  only:
+    - master
+    - develop
+  dependencies:
+    - build-assets
+  script:
+    - mkdir build
+    - tar --exclude build --exclude .git --exclude _src -czf build/blezy-davalo.tar.gz .
+  artifacts:
+    paths:
+      - build/blezy-davalo.tar.gz
+    expire_in: 1 days
+    when: always
+  interruptible: true
+
+deploy-production:
+  stage: deploy
+  resource_group: deploy-production
+  variables:
+    GIT_STRATEGY: none
+  dependencies:
+    - package-app
+  environment:
+    name: Production
+    url: https://www.blezy-davalo.com/
+  rules:
+    - if: $CI_COMMIT_BRANCH == "master"
+  script:
+    - scp build/blezy-davalo.tar.gz sc3zynx6655@sc3zynx6655.universe.wf:~/blezy-davalo.tar.gz
+    - |
+      ssh sc3zynx6655@sc3zynx6655.universe.wf "
+      cd ~/bdagencements.com \
+      && tar -xzf ../blezy-davalo.tar.gz --no-overwrite-dir && rm ../blezy-davalo.tar.gz"
+
+
+deploy-ninja:
+  stage: deploy
+  variables:
+    GIT_STRATEGY: none
+  dependencies:
+    - package-app
+  environment:
+    name: Ninja
+    url: https://blezy.urlprovisoire.net
+  only:
+    - develop
+  script:
+    - scp build/blezy-davalo.tar.gz nexi@server04.nexi.ninja:/var/www/client.blezy
+    - |
+      ssh nexi@server04.nexi.ninja "
+      cd /var/www/client.blezy \
+      && tar -xzf blezy-davalo.tar.gz --no-overwrite-dir \
+      && rm blezy-davalo.tar.gz"
